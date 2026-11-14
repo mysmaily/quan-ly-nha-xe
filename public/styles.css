@@ -278,7 +278,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   background: #fff; color: var(--paid-solid); font-size: 11px; font-weight: 900; display: grid; place-items: center; line-height: 1;
 }
 .paid-mark.static { margin: 0; width: 22px; height: 22px; font-size: 14px; background: var(--paid-solid); color: #fff; }
-.badge { position: absolute; top: 2px; left: 2px; background: var(--primary); color: #fff; font-size: 10px; font-weight: 800; padding: 1px 4px; border-radius: 999px; line-height: 1.3; }
+.badge { flex: none; margin-top: 2px; background: var(--primary); color: #fff; font-size: 10px; font-weight: 800; padding: 1px 4px; border-radius: 999px; line-height: 1.3; }
 .badge.over { background: var(--over); }
 .move-model .cell { min-height: 50px; }
 .floor-tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
@@ -372,3 +372,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   body { background: var(--bg); }
   .tabbar { border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
 }
+
+/* Chọn combo / lẻ cho giường đôi */
+.kind-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kind-pick button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; text-align: left;
+  border-radius: 12px; border: 2px solid var(--line); background: var(--surface);
+}
+.kind-pick b { font-size: 14px; }
+.kind-pick span { font-size: 13px; color: var(--muted); font-weight: 600; }
+.kind-pick button.on { border-color: var(--primary); background: var(--primary-soft); }
+.kind-pick button.on span { color: var(--primary); }

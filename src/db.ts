@@ -79,6 +79,12 @@ const cols = db.query("PRAGMA table_info(bookings)").all() as { name: string }[]
 if (!cols.some((c) => c.name === "boarded")) {
   db.exec("ALTER TABLE bookings ADD COLUMN boarded INTEGER NOT NULL DEFAULT 0");
 }
+// Giá combo giường đôi: mặc định của xe (0 = 2 × giá lẻ) + đánh dấu khách đặt combo
+if (!cols.some((c) => c.name === "combo")) db.exec("ALTER TABLE bookings ADD COLUMN combo INTEGER NOT NULL DEFAULT 0");
+const busCols = db.query("PRAGMA table_info(buses)").all() as { name: string }[];
+if (!busCols.some((c) => c.name === "default_combo_price")) {
+  db.exec("ALTER TABLE buses ADD COLUMN default_combo_price INTEGER NOT NULL DEFAULT 0");
+}
 
 // Tạo tài khoản chủ xe đầu tiên nếu DB trống
 const count = db.query("SELECT COUNT(*) AS n FROM users").get() as { n: number };

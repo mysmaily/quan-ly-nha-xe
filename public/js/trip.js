@@ -46,9 +46,12 @@ export function useTrip(busId) {
 function allSeats(bus) {
   return (bus.layout.floors || []).flatMap((f) => f.seats.map((s) => ({ ...s, floor: f.name })));
 }
-function seatPrice(bus, code) {
+/** Giá giường: single = giá lẻ / người; combo = giá cả giường đôi (null với giường đơn) */
+function seatPrices(bus, code) {
   const s = code && allSeats(bus).find((x) => x.code === code);
-  return s && s.price != null ? s.price : bus.default_price;
+  const single = s && s.price != null ? s.price : bus.default_price;
+  if (!s || s.type !== "double") return { single, combo: null };
+  return { single, combo: s.combo ?? (bus.default_combo_price || single * 2) };
 }
 function naturalCmp(a, b) {
   return String(a).localeCompare(String(b), "vi", { numeric: true });
@@ -143,9 +146,10 @@ function SeatMap({ data, onSeat }) {
   const renderCell = (seat) => {
     if (!seat) return html`<div class="cell aisle"></div>`;
     const bs = bySeat.get(seat.code) || [];
-    const pax = bs.reduce((a, b) => a + b.qty, 0);
-    const status = seatStatus(bs);
     const cap = capacity(seat);
+    // Khách combo chiếm trọn giường đôi
+    const pax = bs.reduce((a, b) => a + (b.combo ? Math.max(b.qty, cap) : b.qty), 0);
+    const status = seatStatus(bs);
     return html`<${Bed} seat=${seat} status=${status} onClick=${() => onSeat(seat)}>
       ${status === "paid" && html`<span class="paid-mark">$</span>`}
       ${pax > cap ? html`<span class="badge over">+${pax - cap}</span>`
@@ -253,6 +257,7 @@ function BookingSheet({ data, seat, bookingId, mode: initialMode, reload, onClos
   if (mode === "new" || editing) {
     return html`<${Sheet} title=${editing ? "Sửa thông tin khách" : title + " · thêm khách"} onClose=${onClose}>
       <${BookingForm} bus=${bus} trip=${trip} seat=${editing ? editing.seat : seat} booking=${editing}
+        others=${(editing ? bookings.filter((b) => b.seat === editing.seat && b.id !== editing.id) : onSeat).length}
         onCancel=${() => (editing || onSeat.length ? setMode("view") : fromExtras ? backToExtras() : onClose())}
         onSaved=${async () => {
           await reload();
@@ -273,7 +278,11 @@ function BookingSheet({ data, seat, bookingId, mode: initialMode, reload, onClos
 
   return html`<${Sheet} title=${title} onClose=${onClose}>
     ${fromExtras && html`<button class="link-btn" onClick=${backToExtras}>‹ Danh sách khách phụ</button>`}
-    ${curSeat && !selId && html`<div class="sheet-meta">Giá: <b>${money(seatPrice(bus, curSeat))}</b> / người · ${onSeat.reduce((a, b) => a + b.qty, 0)} khách trên giường</div>`}
+    ${curSeat && !selId && (() => {
+      const p = seatPrices(bus, curSeat);
+      return html`<div class="sheet-meta">${p.combo != null ? html`Combo <b>${money(p.combo)}</b> · Lẻ <b>${money(p.single)}</b>/người` : html`Giá <b>${money(p.single)}</b>/người`}
+        · ${onSeat.reduce((a, b) => a + b.qty, 0)} khách trên giường</div>`;
+    })()}
     ${shown.map((b) => {
       const st = bStatus(b);
       return html`
@@ -282,7 +291,7 @@ function BookingSheet({ data, seat, bookingId, mode: initialMode, reload, onClos
           <div>
             <span class="pill ${st}">${STATUS_LABEL[st]}</span>
             <div class="bk-phone">${phoneFmt(b.phone) || "Không có SĐT"}</div>
-            ${(b.name || b.qty > 1) && html`<div class="bk-name">${[b.name, b.qty > 1 && `${b.qty} người`].filter(Boolean).join(" · ")}</div>`}
+            ${(b.name || b.qty > 1 || b.combo) && html`<div class="bk-name">${[b.name, b.combo ? `Combo giường đôi${b.qty !== 2 ? ` · ${b.qty} người` : ""}` : b.qty > 1 && `${b.qty} người`].filter(Boolean).join(" · ")}</div>`}
           </div>
           ${b.phone && html`<a class="btn call" href=${"tel:" + b.phone}>${icon("phone", 20)} Gọi</a>`}
         </div>
@@ -350,11 +359,18 @@ function MovePicker({ data, booking, onPick, onCancel }) {
 }
 
 // ---------- form đặt chỗ ----------
-function BookingForm({ bus, trip, seat, booking, onSaved, onCancel }) {
-  const unit = seatPrice(bus, booking ? booking.seat : seat);
-  const [f, setF] = useState(() => booking
-    ? { phone: booking.phone, name: booking.name, pickup: booking.pickup, dropoff: booking.dropoff, note: booking.note, qty: booking.qty, price: String(booking.price) }
-    : { phone: "", name: "", pickup: "", dropoff: "", note: "", qty: 1, price: String(unit) });
+function BookingForm({ bus, trip, seat, booking, others = 0, onSaved, onCancel }) {
+  const prices = seatPrices(bus, booking ? booking.seat : seat);
+  const isDouble = prices.combo != null;
+  const unit = prices.single;
+  // Giường đôi trống → mặc định combo; đã có người nằm → mặc định lẻ (ghép)
+  const calc = (combo, qty) => String(combo ? prices.combo : unit * qty);
+  const [f, setF] = useState(() => {
+    if (booking) return { phone: booking.phone, name: booking.name, pickup: booking.pickup, dropoff: booking.dropoff, note: booking.note, qty: booking.qty, price: String(booking.price), combo: !!booking.combo };
+    const combo = isDouble && others === 0;
+    const qty = combo ? 2 : 1;
+    return { phone: "", name: "", pickup: "", dropoff: "", note: "", qty, price: calc(combo, qty), combo };
+  });
   const [priceTouched, setPriceTouched] = useState(!!booking);
   const [payNow, setPayNow] = useState(false);
   const [more, setMore] = useState(!!(booking && (booking.dropoff || booking.note)));
@@ -385,7 +401,11 @@ function BookingForm({ bus, trip, seat, booking, onSaved, onCancel }) {
 
   const setQty = (q) => {
     q = Math.max(1, Math.min(50, q));
-    setF((x) => ({ ...x, qty: q, price: priceTouched ? x.price : String(unit * q) }));
+    setF((x) => ({ ...x, qty: q, price: priceTouched ? x.price : calc(x.combo, q) }));
+  };
+  const setKind = (combo) => {
+    setPriceTouched(false);
+    setF((x) => { const qty = combo ? 2 : 1; return { ...x, combo, qty, price: calc(combo, qty) }; });
   };
 
   async function save(e) {
@@ -424,6 +444,15 @@ function BookingForm({ bus, trip, seat, booking, onSaved, onCancel }) {
         <input placeholder="VD: Ngã tư Diễn Châu" value=${f.pickup} onInput=${(e) => set("pickup", e.target.value)} />
       <//>
       ${suggest.length > 0 && html`<div class="chips">${suggest.map((p) => html`<button type="button" class="chip" onClick=${() => set("pickup", p)}>${p}</button>`)}</div>`}
+      ${isDouble && html`
+        <div class="kind-pick">
+          <button type="button" class=${f.combo ? "on" : ""} onClick=${() => setKind(true)}>
+            <b>Combo cả giường</b><span>${money(prices.combo)}</span>
+          </button>
+          <button type="button" class=${!f.combo ? "on" : ""} onClick=${() => setKind(false)}>
+            <b>Lẻ (nằm ghép)</b><span>${money(unit)}/người</span>
+          </button>
+        </div>`}
       <div class="grid2">
         <${Field} label="Tên khách (không bắt buộc)">
           <input placeholder="Anh/chị…" value=${f.name} onInput=${(e) => set("name", e.target.value)} />
@@ -436,7 +465,7 @@ function BookingForm({ bus, trip, seat, booking, onSaved, onCancel }) {
           </div>
         <//>
       </div>
-      <${Field} label="Giá vé (tổng)" hint=${`Giá giường: ${money(unit)}/người`}>
+      <${Field} label="Giá vé (tổng)" hint=${f.combo ? `Giá combo giường đôi: ${money(prices.combo)}` : `Giá lẻ: ${money(unit)}/người`}>
         <${MoneyInput} value=${f.price} onInput=${(v) => { setPriceTouched(true); set("price", v); }} />
       <//>
       ${more

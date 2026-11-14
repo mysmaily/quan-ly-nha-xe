@@ -105,17 +105,16 @@ function getOrCreateTrip(busId: number, date: string, direction: "di" | "ve") {
   return { trip, bus };
 }
 
-function seatPrice(bus: any, seatCode: string | null): number {
-  if (!seatCode) return bus.default_price;
-  for (const f of bus.layout.floors || []) {
-    for (const s of f.seats || []) {
-      if (s.code === seatCode) return s.price ?? bus.default_price;
-    }
-  }
-  return bus.default_price;
+/** Giá 1 giường: single = giá lẻ / người; combo = giá cả giường đôi (null nếu giường đơn) */
+function seatPrices(bus: any, seatCode: string | null) {
+  let seat: any = null;
+  for (const f of bus.layout.floors || []) for (const s of f.seats || []) if (s.code === seatCode) seat = s;
+  const single = seat?.price ?? bus.default_price;
+  if (seat?.type !== "double") return { single, combo: null as number | null };
+  return { single, combo: seat.combo ?? (bus.default_combo_price || single * 2) };
 }
 
-const BOOKING_COLS = `b.id, b.trip_id, b.seat, b.phone, b.name, b.pickup, b.dropoff, b.note, b.qty, b.price,
+const BOOKING_COLS = `b.id, b.trip_id, b.seat, b.phone, b.name, b.pickup, b.dropoff, b.note, b.qty, b.price, b.combo,
   b.boarded, b.paid, b.paid_amount, b.paid_at, b.status, b.created_at, b.updated_at, u.name AS created_by_name`;
 
 function getBooking(id: number) {
@@ -225,6 +224,7 @@ function cleanLayout(input: any) {
   const floors = Array.isArray(input?.floors) ? input.floors.slice(0, 3) : [];
   const codes = new Set<string>();
   return {
+    naming: input?.naming === "floor" ? "floor" : "column",
     floors: floors.map((f: any, i: number) => {
       const rows = Math.min(Math.max(int(f.rows, 6), 1), 20);
       const cols = Math.min(Math.max(int(f.cols, 3), 1), 8);
@@ -234,8 +234,9 @@ function cleanLayout(input: any) {
           let code = str(s.code, 10) || `${i + 1}-${s.r}-${s.c}`;
           while (codes.has(code)) code += "'";
           codes.add(code);
-          const price = s.price === null || s.price === undefined || s.price === "" ? null : Math.max(0, int(s.price));
-          return { code, r: int(s.r), c: int(s.c), type: s.type === "double" ? "double" : "single", price };
+          const opt = (v: any) => (v === null || v === undefined || v === "" ? null : moneyVal(v));
+          const type = s.type === "double" ? "double" : "single";
+          return { code, r: int(s.r), c: int(s.c), type, price: opt(s.price), combo: type === "double" ? opt(s.combo) : null };
         });
       return { name: str(f.name, 30) || `Tầng ${i + 1}`, rows, cols, seats };
     }),
@@ -283,6 +284,7 @@ function busFields(body: any) {
     plate, route_out, route_back,
     name: str(body.name, 60),
     default_price: moneyVal(body.default_price),
+    default_combo_price: moneyVal(body.default_combo_price),
     layout: JSON.stringify(cleanLayout(body.layout)),
   };
 }
@@ -291,8 +293,8 @@ route("POST", "/api/buses", ({ user, body }) => {
   requireAdmin(user);
   const f = busFields(body);
   const r = db
-    .query("INSERT INTO buses (plate, name, route_out, route_back, default_price, layout) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(f.plate, f.name, f.route_out, f.route_back, f.default_price, f.layout);
+    .query("INSERT INTO buses (plate, name, route_out, route_back, default_price, default_combo_price, layout) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(f.plate, f.name, f.route_out, f.route_back, f.default_price, f.default_combo_price, f.layout);
   return getBus(Number(r.lastInsertRowid));
 });
 
@@ -301,8 +303,8 @@ route("PUT", "/api/buses/:id", ({ user, body, params }) => {
   const id = int(params[0]);
   getBus(id);
   const f = busFields(body);
-  db.query("UPDATE buses SET plate = ?, name = ?, route_out = ?, route_back = ?, default_price = ?, layout = ? WHERE id = ?").run(
-    f.plate, f.name, f.route_out, f.route_back, f.default_price, f.layout, id,
+  db.query("UPDATE buses SET plate = ?, name = ?, route_out = ?, route_back = ?, default_price = ?, default_combo_price = ?, layout = ? WHERE id = ?").run(
+    f.plate, f.name, f.route_out, f.route_back, f.default_price, f.default_combo_price, f.layout, id,
   );
   return getBus(id);
 });
@@ -337,16 +339,19 @@ route("POST", "/api/bookings", ({ user, body }) => {
   assertBusAccess(user, trip.bus_id);
   const bus = getBus(trip.bus_id);
   const seat = str(body.seat, 10) || null;
-  const qty = Math.min(Math.max(int(body.qty, 1), 1), 50);
+  const comboReq = !!body.combo && seatPrices(bus, seat).combo !== null;
+  const qty = Math.min(Math.max(int(body.qty, comboReq ? 2 : 1), 1), 50);
   const phone = normPhone(body.phone);
   if (!phone && !str(body.name)) throw new HttpError(400, "Nhập số điện thoại hoặc tên khách");
+  const prices = seatPrices(bus, seat);
+  const combo = body.combo && prices.combo !== null ? 1 : 0;
   const price = body.price === undefined || body.price === null || body.price === ""
-    ? seatPrice(bus, seat) * qty
+    ? (combo ? prices.combo! : prices.single * qty)
     : moneyVal(body.price);
   const r = db
-    .query(`INSERT INTO bookings (trip_id, seat, phone, name, pickup, dropoff, note, qty, price, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(trip.id, seat, phone, str(body.name, 60), str(body.pickup, 200), str(body.dropoff, 200), str(body.note, 300), qty, price, user.id);
+    .query(`INSERT INTO bookings (trip_id, seat, phone, name, pickup, dropoff, note, qty, price, combo, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(trip.id, seat, phone, str(body.name, 60), str(body.pickup, 200), str(body.dropoff, 200), str(body.note, 300), qty, price, combo, user.id);
   return getBooking(Number(r.lastInsertRowid));
 });
 
@@ -361,10 +366,11 @@ route("PUT", "/api/bookings/:id", ({ user, body, params }) => {
     note: "note" in body ? str(body.note, 300) : b.note,
     qty: "qty" in body ? Math.min(Math.max(int(body.qty, 1), 1), 50) : b.qty,
     price: "price" in body ? moneyVal(body.price) : b.price,
+    combo: "combo" in body ? (body.combo ? 1 : 0) : b.combo,
   };
-  db.query(`UPDATE bookings SET seat = ?, phone = ?, name = ?, pickup = ?, dropoff = ?, note = ?, qty = ?, price = ?,
+  db.query(`UPDATE bookings SET seat = ?, phone = ?, name = ?, pickup = ?, dropoff = ?, note = ?, qty = ?, price = ?, combo = ?,
             updated_at = datetime('now') WHERE id = ?`)
-    .run(next.seat, next.phone, next.name, next.pickup, next.dropoff, next.note, next.qty, next.price, b.id);
+    .run(next.seat, next.phone, next.name, next.pickup, next.dropoff, next.note, next.qty, next.price, next.combo, b.id);
   return getBooking(b.id);
 });
 

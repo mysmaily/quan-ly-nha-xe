@@ -110,7 +110,7 @@ export function BusesPage() {
               <div class="row-title">${b.plate}${b.name && html` <span class="muted">· ${b.name}</span>`}</div>
               <div class="row-sub">Đi: ${b.route_out}</div>
               <div class="row-sub">Về: ${b.route_back}</div>
-              <div class="row-sub">${seats.length} giường · ${seats.reduce((a, s) => a + capacity(s), 0)} chỗ · ${money(b.default_price)}</div>
+              <div class="row-sub">${seats.length} giường · ${seats.reduce((a, s) => a + capacity(s), 0)} chỗ · ${money(b.default_price)}${b.layout.floors.some((f) => f.seats.some((s) => s.type === "double")) ? ` · combo ${money(b.default_combo_price || 2 * b.default_price)}` : ""}</div>
               <div class="row-sub">${crew.length ? crew.map((u) => `${JOBS[u.job]} ${u.name}`).join(", ") : html`<span class="c-booked">Chưa phân công nhân viên</span>`}</div>
             </div>
             <div class="row-end">${icon("right")}</div>
@@ -126,8 +126,8 @@ export function BusesPage() {
 
 function BusEditor({ bus, onClose, onSaved }) {
   const [f, setF] = useState(() => bus
-    ? { plate: bus.plate, name: bus.name, route_out: bus.route_out, route_back: bus.route_back, default_price: String(bus.default_price) }
-    : { plate: "", name: "", route_out: "", route_back: "", default_price: "" });
+    ? { plate: bus.plate, name: bus.name, route_out: bus.route_out, route_back: bus.route_back, default_price: String(bus.default_price), default_combo_price: bus.default_combo_price ? String(bus.default_combo_price) : "" }
+    : { plate: "", name: "", route_out: "", route_back: "", default_price: "", default_combo_price: "" });
   const [layout, setLayout] = useState(() => bus ? bus.layout : generateLayout({}));
   const [busy, setBusy] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
@@ -145,7 +145,7 @@ function BusEditor({ bus, onClose, onSaved }) {
   async function save() {
     setBusy(true);
     try {
-      const body = { ...f, default_price: Number(f.default_price || 0), layout };
+      const body = { ...f, default_price: Number(f.default_price || 0), default_combo_price: Number(f.default_combo_price || 0), layout };
       await api(bus ? `/buses/${bus.id}` : "/buses", { method: bus ? "PUT" : "POST", body });
       toast("Đã lưu xe");
       onSaved();
@@ -168,18 +168,24 @@ function BusEditor({ bus, onClose, onSaved }) {
       </div>
       <${Field} label="Tên chuyến đi"><input placeholder="Nghệ An → Hà Nội" value=${f.route_out} onInput=${(e) => autoBack(e.target.value)} /><//>
       <${Field} label="Tên chuyến về"><input placeholder="Hà Nội → Nghệ An" value=${f.route_back} onInput=${(e) => set("route_back", e.target.value)} /><//>
-      <${Field} label="Giá vé mặc định / người" hint="Giường nào không đặt giá riêng sẽ dùng giá này">
-        <${MoneyInput} value=${f.default_price} onInput=${(v) => set("default_price", v)} />
-      <//>
+      <div class="grid2">
+        <${Field} label="Giá lẻ / người" hint="Giường nào không đặt giá riêng dùng giá này">
+          <${MoneyInput} value=${f.default_price} onInput=${(v) => set("default_price", v)} />
+        <//>
+        <${Field} label="Combo giường đôi" hint=${`Trống = 2 × giá lẻ (${money(2 * Number(f.default_price || 0))})`}>
+          <${MoneyInput} value=${f.default_combo_price} placeholder=${String(2 * Number(f.default_price || 0))} onInput=${(v) => set("default_combo_price", v)} />
+        <//>
+      </div>
     </div>
     <div class="section-title"><span>Sơ đồ giường</span></div>
-    <${LayoutEditor} layout=${layout} onChange=${setLayout} defaultPrice=${Number(f.default_price || 0)} />
+    <${LayoutEditor} layout=${layout} onChange=${setLayout} defaultPrice=${Number(f.default_price || 0)}
+      defaultCombo=${Number(f.default_combo_price || 0) || 2 * Number(f.default_price || 0)} />
     ${bus && html`<button class="btn block ghost danger-text" onClick=${remove}>${icon("trash", 18)} Ngừng sử dụng xe này</button>`}
   <//>`;
 }
 
 // ---------- trình soạn sơ đồ ----------
-function LayoutEditor({ layout, onChange, defaultPrice }) {
+function LayoutEditor({ layout, onChange, defaultPrice, defaultCombo }) {
   const [fi, setFi] = useState(0);
   const [tool, setTool] = useState("select");
   const [sel, setSel] = useState(null); // {r, c}
@@ -221,12 +227,18 @@ function LayoutEditor({ layout, onChange, defaultPrice }) {
     if (v === false) return;
     updateFloor((f) => ({ ...f, seats: f.seats.map((s) => ({ ...s, price: v === "" ? null : Number(v) })) }));
   }
+  async function setDoubleCombo() {
+    const v = await ask(`Giá combo cho tất cả giường đôi của xe (để trống = combo mặc định ${money(defaultCombo)}):`, { ok: "Áp dụng", input: { value: "" } });
+    if (v === false) return;
+    onChange({ ...layout, floors: floors.map((f) => ({ ...f, seats: f.seats.map((s) => (s.type === "double" ? { ...s, combo: v === "" ? null : Number(v) } : s)) })) });
+  }
+  const hasDouble = allSeats.some((s) => s.type === "double");
 
   const renderCell = (seat, r, c) => {
     const isSel = sel && sel.r === r && sel.c === c && seat;
     if (!seat) return html`<button class="cell slot" onClick=${() => tap(r, c, null)}>${tool === "single" || tool === "double" ? "+" : ""}</button>`;
     return html`<${Bed} seat=${seat} cls=${"edit" + (isSel ? " selected" : "")} onClick=${() => tap(r, c, seat)}>
-      <span class="who">${moneyShort(seat.price ?? defaultPrice)}</span>
+      <span class="who">${seat.type === "double" ? html`${moneyShort(seat.combo ?? defaultCombo)}<br />lẻ ${moneyShort(seat.price ?? defaultPrice)}` : moneyShort(seat.price ?? defaultPrice)}</span>
     <//>`;
   };
 
@@ -247,7 +259,8 @@ function LayoutEditor({ layout, onChange, defaultPrice }) {
           { value: "column", label: "Cột A/B/C · T1 lẻ, T2 chẵn" }, { value: "floor", label: "Theo tầng A…, B…" }]} />
       </div>
       <div class="editor-bar">
-        ${floor && html`<button class="btn sm outline" onClick=${setFloorPrice}>Giá cả tầng</button>`}
+        ${floor && html`<button class="btn sm outline" onClick=${setFloorPrice}>Giá lẻ cả tầng</button>`}
+        ${hasDouble && html`<button class="btn sm outline" onClick=${setDoubleCombo}>Combo giường đôi</button>`}
       </div>
 
       ${floor ? html`
@@ -268,9 +281,15 @@ function LayoutEditor({ layout, onChange, defaultPrice }) {
                 <${Segmented} value=${selSeat.type} onChange=${(t) => patchSel({ type: t })} options=${[{ value: "single", label: "Đơn" }, { value: "double", label: "Đôi" }]} />
               <//>
             </div>
-            <${Field} label="Giá riêng / người" hint=${`Để trống = giá mặc định (${money(defaultPrice)})`}>
-              <${MoneyInput} value=${selSeat.price ?? ""} placeholder=${String(defaultPrice)} onInput=${(v) => patchSel({ price: v === "" ? null : Number(v) })} />
-            <//>
+            <div class=${selSeat.type === "double" ? "grid2" : ""}>
+              <${Field} label=${selSeat.type === "double" ? "Giá lẻ / người" : "Giá riêng / người"} hint=${`Trống = ${money(defaultPrice)}`}>
+                <${MoneyInput} value=${selSeat.price ?? ""} placeholder=${String(defaultPrice)} onInput=${(v) => patchSel({ price: v === "" ? null : Number(v) })} />
+              <//>
+              ${selSeat.type === "double" && html`
+                <${Field} label="Giá combo cả giường" hint=${`Trống = ${money(defaultCombo)}`}>
+                  <${MoneyInput} value=${selSeat.combo ?? ""} placeholder=${String(defaultCombo)} onInput=${(v) => patchSel({ combo: v === "" ? null : Number(v) })} />
+                <//>`}
+            </div>
             <div class="row-btns">
               <button class="btn ghost danger-text" onClick=${() => { updateFloor((f) => ({ ...f, seats: f.seats.filter((s) => s !== selSeat) })); setSel(null); }}>${icon("trash", 16)} Xoá giường</button>
               <button class="btn ghost" onClick=${() => setSel(null)}>Xong</button>
