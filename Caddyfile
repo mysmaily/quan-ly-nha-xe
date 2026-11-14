@@ -1,0 +1,3 @@
+nhaxe.example.com {
+	reverse_proxy nhaxe:3000
+}

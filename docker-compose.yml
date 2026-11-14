@@ -1,0 +1,28 @@
+services:
+  nhaxe:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      ADMIN_PHONE: "0900000000"   # SĐT tài khoản chủ xe (chỉ dùng lần chạy đầu tiên)
+      ADMIN_PIN: "123456"         # PIN ban đầu — đổi ngay sau khi đăng nhập
+      COOKIE_SECURE: "1"          # bật khi chạy sau HTTPS (Caddy)
+    volumes:
+      - ./data:/app/data
+
+  # HTTPS tự động. Sửa nhaxe.example.com trong Caddyfile thành tên miền của bạn.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - nhaxe
+
+volumes:
+  caddy_data:

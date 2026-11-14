@@ -1,0 +1,16 @@
+{
+  "name": "quan-ly-nha-xe",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun src/server.ts",
+    "dev": "bun --watch src/server.ts",
+    "seed-demo": "bun src/seed-demo.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "dependencies": {
+    "htm": "3.1.1"
+  }
+}
