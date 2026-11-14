@@ -14,13 +14,20 @@ export function seatStatus(bookings) {
 const WHEEL = html`<svg class="wheel" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4">
   <circle cx="12" cy="12" r="9.5" /><circle cx="12" cy="12" r="2.2" /><path d="M3 11c3-1 6-1.4 9-1.4s6 .4 9 1.4M10.2 13.5 7 20M13.8 13.5 17 20" /></svg>`;
 
+/** Cột lối đi (không có giường nào) chỉ rộng ~1/3 giường để giường to hơn */
+function colTemplate(floor, editor) {
+  if (editor) return `repeat(${floor.cols}, minmax(0, 1fr))`;
+  const used = new Set(floor.seats.map((s) => s.c));
+  return Array.from({ length: floor.cols }, (_, c) => `minmax(0, ${used.has(c) ? 1 : 0.32}fr)`).join(" ");
+}
+
 /** Lưới 1 tầng. renderCell(seat|null, r, c) trả về nội dung ô. fill = giãn kín chiều cao */
 export function FloorGrid({ floor, renderCell, fill, driver, editor }) {
   const cells = [];
   const byPos = new Map(floor.seats.map((s) => [s.r + ":" + s.c, s]));
   for (let r = 0; r < floor.rows; r++)
     for (let c = 0; c < floor.cols; c++) cells.push(renderCell(byPos.get(r + ":" + c) || null, r, c));
-  const style = `grid-template-columns: repeat(${floor.cols}, minmax(0, 1fr));`;
+  const style = `grid-template-columns: ${colTemplate(floor, editor)};`;
   return html`
     <div class="floor ${fill ? "fill" : ""} ${editor ? "editor" : ""}">
       <div class="floor-name">${driver && WHEEL}<span>${floor.name}</span></div>
@@ -28,13 +35,30 @@ export function FloorGrid({ floor, renderCell, fill, driver, editor }) {
     </div>`;
 }
 
-/** Mô hình xe: các tầng nằm cạnh nhau, tầng 1 có vô lăng */
-export function BusModel({ layout, renderCell, fill }) {
+/** Mô hình xe: các tầng nằm cạnh nhau, tầng 1 có vô lăng; footer = băng cuối (khách không có giường) */
+export function BusModel({ layout, renderCell, fill, footer }) {
   const floors = layout.floors || [];
   if (!floors.length) return html`<div class="empty">Xe chưa có sơ đồ ghế. Chủ xe cần vào mục Xe để soạn sơ đồ.</div>`;
-  return html`<div class="bus-model ${fill ? "fill" : ""}">
-    ${floors.map((f, i) => html`<${FloorGrid} floor=${f} renderCell=${renderCell} fill=${fill} driver=${i === 0} />`)}
+  return html`<div class="bus-body ${fill ? "fill" : ""}">
+    <div class="bus-model ${fill ? "fill" : ""}">
+      ${floors.map((f, i) => html`<${FloorGrid} floor=${f} renderCell=${renderCell} fill=${fill} driver=${i === 0} />`)}
+    </div>
+    ${footer}
   </div>`;
+}
+
+/** Băng cuối: 1 dải ngang thay cho hàng giường cuối, chứa khách thêm không có giường */
+export function Bench({ bookings, onClick }) {
+  const pax = bookings.reduce((a, b) => a + b.qty, 0);
+  return html`
+    <button class="bench ${seatStatus(bookings)}" onClick=${onClick}>
+      <span class="bench-pillows"><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="bench-text">
+        <b>Băng cuối · khách thêm</b>
+        <small>${pax ? bookings.slice(0, 3).map((b) => b.pickup || b.name || (b.phone || "").slice(-4)).join(", ") + (bookings.length > 3 ? "…" : "") : "Chạm để thêm khách không có giường"}</small>
+      </span>
+      <span class="bench-count">${pax ? pax : "+"}</span>
+    </button>`;
 }
 
 /** Hình giường: mã ở giữa, gối ở cuối; giường đôi có 2 gối */
@@ -42,7 +66,7 @@ export function Bed({ seat, status = "empty", cls = "", onClick, disabled, child
   return html`
     <button class="cell bed ${seat.type} ${status} ${cls}" disabled=${disabled} onClick=${onClick} aria-label=${"Giường " + seat.code}>
       <span class="code">${seat.code}</span>
-      ${children}
+      <span class="marks">${children}</span>
       <span class="pillows">${seat.type === "double" ? html`<i></i><i></i>` : html`<i></i>`}</span>
     </button>`;
 }
@@ -95,7 +119,7 @@ export function renumber(layout, naming = layout.naming || "column") {
 }
 
 /** Tạo nhanh sơ đồ xe giường nằm */
-export function generateLayout({ floors = 2, lanes = 3, rows = 5, backRow = true, type = "single", naming = "column" }) {
+export function generateLayout({ floors = 2, lanes = 3, rows = 5, backRow = false, type = "single", naming = "column" }) {
   const cols = lanes * 2 - 1; // giường - lối đi - giường ...
   const layout = {
     naming,

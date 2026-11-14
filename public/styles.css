@@ -225,15 +225,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .dir-toggle span { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dir-toggle button.on { border-color: var(--primary); background: var(--primary-soft); }
 .dir-toggle button.on small { background: var(--primary); color: var(--primary-ink); }
-.summary { display: grid; grid-template-columns: 1.2fr 1fr 1fr .9fr; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-top: 6px; }
+.summary { display: grid; grid-template-columns: 1.2fr 1fr 1fr; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-top: 6px; }
 .summary > * { padding: 5px 4px; text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 0; }
 .summary > * + * { border-left: 1px solid var(--line); }
 .summary b { font-size: 17px; line-height: 1.2; }
 .summary b small { font-size: 12px; color: var(--muted); }
 .summary b.over { color: var(--over); }
 .summary span { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.extras-btn b { color: var(--primary); }
-.legend { display: flex; justify-content: space-between; gap: 6px; margin: 8px 2px 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.legend { display: flex; justify-content: space-between; gap: 6px; margin: 6px 2px 5px; font-size: 12px; color: var(--muted); font-weight: 600; }
 .legend span { display: flex; align-items: center; gap: 4px; }
 .dot { width: 14px; height: 14px; padding: 0; border-radius: 4px; border: 1.5px solid; display: inline-grid; place-items: center; font-size: 10px; font-weight: 900; font-style: normal; }
 .dot.empty { background: var(--empty-bg); border-color: var(--empty-line); }
@@ -242,15 +241,38 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .dot.paid { background: var(--paid-solid); border-color: var(--paid-solid); color: #fff; }
 
 /* ---------- mô hình xe ---------- */
-.trip-page.map-mode { display: flex; flex-direction: column; padding-bottom: 10px; }
+.main > .trip-page.map-mode { flex: 1 1 0; min-height: 500px; display: flex; flex-direction: column; padding: 8px 16px 8px; }
+.bus-body { display: flex; flex-direction: column; gap: 8px; }
+.bus-body.fill { flex: 1 1 0; min-height: 0; }
 .bus-model { display: flex; gap: 8px; align-items: stretch; }
-.bus-model.fill { flex: 1 0 auto; min-height: 0; }
+.bus-model.fill { flex: 1 1 0; min-height: 0; }
+
+/* Băng cuối: khách thêm không có giường */
+.bench {
+  flex: none; display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 10px;
+  border-radius: 12px; border: 1.5px dashed var(--empty-line); background: var(--surface); text-align: left; color: var(--text);
+}
+.bench-pillows { display: flex; gap: 3px; flex: none; }
+.bench-pillows i { width: 9px; height: 18px; border: 1.5px solid currentColor; border-radius: 3px; opacity: .45; }
+.bench-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bench-text b { font-size: 14px; }
+.bench-text small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bench-count {
+  flex: none; min-width: 34px; height: 34px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center;
+  font-weight: 800; font-size: 16px; background: var(--primary-soft); color: var(--primary);
+}
+.bench.booked { border-style: solid; background: var(--booked-bg); border-color: var(--booked-line); color: var(--booked); }
+.bench.boarded { border-style: solid; background: var(--boarded-bg); border-color: var(--boarded-line); color: var(--boarded); }
+.bench.paid { border-style: solid; background: var(--paid-solid); border-color: var(--paid-solid); color: #fff; }
+.bench.paid .bench-text small { color: rgba(255, 255, 255, .85); }
+.bench:not(.empty) .bench-text small { color: inherit; opacity: .85; }
+.bench:not(.empty) .bench-count { background: transparent; border: 2px solid currentColor; color: inherit; }
 .floor { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 16px 16px 10px 10px; padding: 6px 6px 8px; display: flex; flex-direction: column; }
-.floor-name { position: relative; display: flex; align-items: center; justify-content: center; height: 26px; font-size: 14px; font-weight: 800; margin-bottom: 4px; }
+.floor-name { position: relative; display: flex; align-items: center; justify-content: center; height: 24px; font-size: 14px; font-weight: 800; margin-bottom: 3px; }
 .floor-name .wheel { position: absolute; left: 2px; top: 1px; color: var(--text); }
 .floor-grid { display: grid; gap: 5px; }
-.floor.fill .floor-grid { flex: 1; }
-.floor.fill .floor-grid { grid-auto-rows: minmax(46px, 1fr); }
+.floor.fill .floor-grid { flex: 1 1 0; min-height: 0; }
+.floor.fill .floor-grid { grid-auto-rows: minmax(0, 1fr); }
 .floor.editor .floor-grid { gap: 6px; }
 
 .cell { min-height: 54px; border-radius: 8px; position: relative; min-width: 0; }
@@ -273,12 +295,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .bed.paid .pillows i { opacity: .7; }
 .bed.current { outline: 3px solid var(--primary); outline-offset: -3px; }
 .bed.edit.selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.marks { position: absolute; left: 0; right: 0; bottom: 3px; display: flex; gap: 2px; justify-content: center; align-items: center; }
+.marks:empty { display: none; }
+.bed:has(.marks > *) .pillows { display: none; }
+.floor.editor .marks { position: static; }
+.floor.editor .bed:has(.marks > *) .pillows { display: flex; }
 .paid-mark {
-  flex: none; margin-top: 2px; width: 15px; height: 15px; border-radius: 999px;
+  flex: none; width: 15px; height: 15px; border-radius: 999px;
   background: #fff; color: var(--paid-solid); font-size: 11px; font-weight: 900; display: grid; place-items: center; line-height: 1;
 }
 .paid-mark.static { margin: 0; width: 22px; height: 22px; font-size: 14px; background: var(--paid-solid); color: #fff; }
-.badge { flex: none; margin-top: 2px; background: var(--primary); color: #fff; font-size: 10px; font-weight: 800; padding: 1px 4px; border-radius: 999px; line-height: 1.3; }
+.badge { flex: none; background: var(--primary); color: #fff; font-size: 10px; font-weight: 800; padding: 1px 4px; border-radius: 999px; line-height: 1.3; }
 .badge.over { background: var(--over); }
 .move-model .cell { min-height: 50px; }
 .floor-tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; }

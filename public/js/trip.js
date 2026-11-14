@@ -3,7 +3,7 @@ import {
   html, useState, useEffect, useRef, useMemo, api, money, moneyShort, phoneFmt, dateLabel, addDays, vnToday,
   timeOf, toast, ask, Sheet, MoneyInput, Field, Segmented, Empty, icon, store,
 } from "./lib.js";
-import { BusModel, Bed, capacity, seatStatus } from "./seatmap.js";
+import { BusModel, Bed, Bench, capacity, seatStatus } from "./seatmap.js";
 
 // ---------- trạng thái chuyến (ngày, chiều đi/về, dữ liệu) ----------
 export function useTrip(busId) {
@@ -83,7 +83,7 @@ function TripHeader({ t, bus }) {
     </div>`;
 }
 
-function SummaryBar({ data, onExtras }) {
+function SummaryBar({ data }) {
   const seats = allSeats(data.bus);
   const beds = seats.reduce((a, s) => a + capacity(s), 0);
   let pax = 0, paid = 0, unpaid = 0, boarded = 0;
@@ -92,13 +92,11 @@ function SummaryBar({ data, onExtras }) {
     if (b.boarded || b.paid) boarded += b.qty;
     if (b.paid) paid += b.paid_amount; else unpaid += b.price;
   }
-  const extras = extrasOf(data).reduce((a, b) => a + b.qty, 0);
   return html`
     <div class="summary">
       <div><b class=${pax > beds ? "over" : ""}>${pax}<small>/${beds}</small></b><span>khách · ${boarded} lên</span></div>
       <div><b class="c-paid">${moneyShort(paid)}</b><span>đã thu</span></div>
       <div><b class="c-booked">${moneyShort(unpaid)}</b><span>chưa thu</span></div>
-      <button class="extras-btn" onClick=${onExtras}><b>${extras ? "+" + extras : icon("plus", 18)}</b><span>khách phụ</span></button>
     </div>`;
 }
 
@@ -125,9 +123,9 @@ export function TripPage({ t, view }) {
   return html`
     <div class="page trip-page ${view === "map" ? "map-mode" : ""}">
       <${TripHeader} t=${t} bus=${data.bus} />
-      <${SummaryBar} data=${data} onExtras=${openExtras} />
+      <${SummaryBar} data=${data} />
       ${view === "map"
-        ? html`<${Legend} /><${SeatMap} data=${data} onSeat=${(seat) => setSheet({ seat: seat.code, mode: "auto" })} />`
+        ? html`<${Legend} /><${SeatMap} data=${data} onSeat=${(seat) => setSheet({ seat: seat.code, mode: "auto" })} onBench=${openExtras} />`
         : html`<${PassengerList} data=${data} onBooking=${openBooking} onExtra=${() => setSheet({ seat: null, mode: "new" })} />`}
       ${sheet && html`<${BookingSheet} key=${sheet.seat + ":" + sheet.bookingId + ":" + sheet.mode} data=${data} ...${sheet}
         reload=${t.reload} onClose=${() => setSheet(null)} />`}
@@ -135,7 +133,7 @@ export function TripPage({ t, view }) {
 }
 
 // ---------- mô hình xe ----------
-function SeatMap({ data, onSeat }) {
+function SeatMap({ data, onSeat, onBench }) {
   const { bus, bookings } = data;
   const bySeat = useMemo(() => {
     const m = new Map();
@@ -156,7 +154,8 @@ function SeatMap({ data, onSeat }) {
         : seat.type === "double" && pax > 0 && pax < cap ? html`<span class="badge">${pax}/${cap}</span>` : null}
     <//>`;
   };
-  return html`<${BusModel} layout=${bus.layout} renderCell=${renderCell} fill />`;
+  return html`<${BusModel} layout=${bus.layout} renderCell=${renderCell} fill
+    footer=${html`<${Bench} bookings=${extrasOf(data)} onClick=${onBench} />`} />`;
 }
 
 // ---------- danh sách khách ----------
@@ -164,7 +163,9 @@ function PassengerList({ data, onBooking, onExtra }) {
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState(() => store.get("listSort", "seat"));
   const [q, setQ] = useState("");
-  let list = data.bookings.slice();
+  // Khách có mã giường không còn trong sơ đồ = khách băng cuối
+  const codes = new Set(allSeats(data.bus).map((x) => x.code));
+  let list = data.bookings.map((b) => (b.seat && !codes.has(b.seat) ? { ...b, seat: null } : b));
   if (filter === "notboarded") list = list.filter((b) => !b.boarded && !b.paid);
   if (filter === "unpaid") list = list.filter((b) => !b.paid);
   if (filter === "paid") list = list.filter((b) => b.paid);
@@ -238,7 +239,7 @@ function BookingSheet({ data, seat, bookingId, mode: initialMode, reload, onClos
   const selBooking = selId && bookings.find((b) => b.id === selId);
   const curSeat = selBooking ? selBooking.seat : seat;
   const curSeatObj = curSeat ? allSeats(bus).find((s) => s.code === curSeat) : null;
-  const title = mode === "extras" ? "Khách phụ / không có ghế"
+  const title = mode === "extras" ? "Băng cuối · khách không có giường"
     : curSeat ? `Giường ${curSeat}${curSeatObj ? (curSeatObj.type === "double" ? " · đôi" : "") : " (đã xoá khỏi sơ đồ)"}`
     : "Khách không có ghế";
   const editing = mode.startsWith("edit:") ? bookings.find((b) => b.id === Number(mode.slice(5))) : null;
@@ -247,10 +248,10 @@ function BookingSheet({ data, seat, bookingId, mode: initialMode, reload, onClos
 
   if (mode === "extras") {
     return html`<${Sheet} title=${title} onClose=${onClose}>
-      <p class="hint">Khách ngồi/nằm ghế phụ, lối đi… khi xe đã kín giường.</p>
-      <div class="list">${extras.map((b) => html`<${BookingRow} b=${b} onClick=${() => { setSelId(b.id); setMode("view"); }} />`)}</div>
-      ${!extras.length && html`<${Empty}>Chưa có khách phụ<//>`}
-      <button class="btn block primary" onClick=${() => setMode("new")}>${icon("plus")} Thêm khách phụ</button>
+      <p class="hint">Khách nằm băng cuối, ghế phụ, lối đi… — không gắn với giường nào.</p>
+      <div class="list">${extras.map((b) => html`<${BookingRow} b=${{ ...b, seat: null }} onClick=${() => { setSelId(b.id); setMode("view"); }} />`)}</div>
+      ${!extras.length && html`<${Empty}>Chưa có khách nào<//>`}
+      <button class="btn block primary" onClick=${() => setMode("new")}>${icon("plus")} Thêm khách</button>
     <//>`;
   }
 
@@ -272,12 +273,12 @@ function BookingSheet({ data, seat, bookingId, mode: initialMode, reload, onClos
         onPick=${(code) => run(async () => {
           await api(`/bookings/${moving.id}`, { method: "PUT", body: { seat: code } });
           onClose();
-        }, code ? `Đã chuyển sang giường ${code}` : "Đã chuyển sang khách phụ")} />
+        }, code ? `Đã chuyển sang giường ${code}` : "Đã chuyển xuống băng cuối")} />
     <//>`;
   }
 
   return html`<${Sheet} title=${title} onClose=${onClose}>
-    ${fromExtras && html`<button class="link-btn" onClick=${backToExtras}>‹ Danh sách khách phụ</button>`}
+    ${fromExtras && html`<button class="link-btn" onClick=${backToExtras}>‹ Danh sách băng cuối</button>`}
     ${curSeat && !selId && (() => {
       const p = seatPrices(bus, curSeat);
       return html`<div class="sheet-meta">${p.combo != null ? html`Combo <b>${money(p.combo)}</b> · Lẻ <b>${money(p.single)}</b>/người` : html`Giá <b>${money(p.single)}</b>/người`}
@@ -354,7 +355,7 @@ function MovePicker({ data, booking, onPick, onCancel }) {
     <div class="move-model"><${BusModel} layout=${data.bus.layout} renderCell=${renderCell} /></div>
     <div class="row-btns">
       <button class="btn ghost" onClick=${onCancel}>Quay lại</button>
-      ${booking.seat && html`<button class="btn outline" onClick=${() => onPick(null)}>Chuyển thành khách phụ</button>`}
+      ${booking.seat && html`<button class="btn outline" onClick=${() => onPick(null)}>Chuyển xuống băng cuối</button>`}
     </div>`;
 }
 
@@ -421,7 +422,7 @@ function BookingForm({ bus, trip, seat, booking, others = 0, onSaved, onCancel }
       } else {
         const b = await api("/bookings", { method: "POST", body: { ...body, trip_id: trip.id, seat } });
         if (payNow) await api(`/bookings/${b.id}/pay`, { method: "POST" });
-        toast(seat ? `Đã thêm khách vào giường ${seat}` : "Đã thêm khách phụ");
+        toast(seat ? `Đã thêm khách vào giường ${seat}` : "Đã thêm khách vào băng cuối");
       }
       await onSaved();
     } catch (err) {

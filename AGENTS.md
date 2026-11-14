@@ -35,20 +35,24 @@ Ngôn ngữ giao diện: **tiếng Việt** (cả text UI, thông báo lỗi API
 }
 ```
 - Mỗi tầng là lưới `rows × cols`; ô không có giường = **lối đi** / khoảng trống. Nhờ vậy vẽ được mọi kiểu xe:
-  2 lối đi – 3 dãy (cols 5), 1 lối đi – 2 dãy giường đôi (cols 3), hàng cuối nằm liền 5 giường…
+  2 lối đi – 3 dãy (cols 5), 1 lối đi – 2 dãy giường đôi (cols 3)…
+  Ở màn lơ xe, **cột không có giường nào được thu hẹp ~1/3** (`colTemplate()`), để giường to; trình soạn sơ đồ giữ cột đều để dễ chạm.
+- **Hàng cuối (băng nằm liền) không chia giường**: mô hình xe luôn có dải **"Băng cuối · khách thêm"** dưới các tầng (`Bench`),
+  chạm vào là danh sách khách không có giường + nút thêm. "Tạo nhanh" không sinh hàng cuối nữa.
 - `type`: `single` (1 chỗ) | `double` (2 chỗ). Tối đa 3 tầng, 20 hàng, 8 cột (server `cleanLayout()` kiểm tra lại).
 - `price` = giá lẻ / người riêng của giường (`null` → `buses.default_price`).
 - `combo` = giá combo cả giường đôi (`null` → `buses.default_combo_price`, nếu = 0 → `2 × giá lẻ`). Chỉ có ý nghĩa với giường đôi.
 - **Đánh số** (`naming`), xem `renumber()` trong `public/js/seatmap.js`:
   - `column` (mặc định, giống xe thực tế): cột dãy A/B/C, **tầng 1 số lẻ, tầng 2 số chẵn** (A1 dưới, A2 trên, A3 dưới…).
-    Giường ở cột lối đi (hàng cuối) lấy chữ của dãy ngoài cùng gần nhất, số = số hàng + số tầng → `A11 A13 B11 C13 C11` / `A12 A14 B12 C14 C12`.
+    (Nếu chủ xe vẫn tự vẽ giường ở cột lối đi: lấy chữ dãy ngoài cùng gần nhất, số = số hàng + số tầng, VD `A13`, `C13`.)
   - `floor`: tầng 1 `A1, A2…`, tầng 2 `B1, B2…` theo thứ tự hàng.
 - Booking lưu **mã giường** (`seat`), không lưu toạ độ. Đổi mã/xoá giường trong sơ đồ → booking cũ thành "khách phụ" (không khớp giường nào).
 
 ### 2.3 Khách (`bookings`)
 - Một booking = một cuộc gọi đặt chỗ: SĐT, tên (tuỳ chọn), **điểm đón**, điểm trả, ghi chú, số người (`qty`), giá (`price`).
-- **Nhồi khách là bình thường**: số khách KHÔNG cần khớp số giường. Một giường có thể có nhiều booking; `seat = NULL` là **khách phụ**
-  (ghế phụ, nằm lối đi). Không bao giờ chặn đặt khi giường/xe đã kín — chỉ hiển thị cảnh báo (badge đỏ `+1`).
+- **Nhồi khách là bình thường**: số khách KHÔNG cần khớp số giường. Một giường có thể có nhiều booking; `seat = NULL` là **khách băng cuối**
+  (băng cuối, ghế phụ, nằm lối đi). Booking có mã giường không còn trong sơ đồ cũng được coi là khách băng cuối (`extrasOf()`).
+  Không bao giờ chặn đặt khi giường/xe đã kín — chỉ hiển thị cảnh báo (badge đỏ `+1`).
 - Huỷ vé = `status = 'cancelled'` (soft delete), không xoá dòng.
 - Gõ đủ 10 số SĐT → tự điền điểm đón/tên lần trước của khách trên cùng xe (`GET /api/lookup`). Gợi ý các điểm đón hay dùng 60 ngày gần nhất.
 
@@ -62,6 +66,7 @@ Ngôn ngữ giao diện: **tiếng Việt** (cả text UI, thông báo lỗi API
 
 Giường nhiều khách: tất cả đã thu → xanh `$`; tất cả đã lên/đã thu → xanh nhạt; còn lại → vàng (`seatStatus()` trong `seatmap.js`).
 Thu tiền tự đặt `boarded = 1`. Giường đôi chưa đủ người → badge `1/2`; quá chỗ → badge đỏ `+n`. Booking combo chiếm trọn giường đôi.
+Dấu `$` và badge nằm ở đáy giường, thay chỗ cái gối. Băng cuối dùng cùng quy tắc màu cho cả nhóm khách.
 
 ### 2.5 Giá & thu tiền
 - Giá vé tính **theo người**: giường đơn `qty × giá lẻ`.
@@ -135,7 +140,9 @@ public/
 
 **UI (mobile-first, giống app):**
 - Thiết kế cho màn 375px trước, kiểm tra cả màn thấp (375×667) và **dark mode** (lơ xe dùng ban đêm).
-- **Sơ đồ xe phải vừa 1 màn hình** không cuộn: shell là flex column `TopBar → .main (cuộn) → TabBar`; ở chế độ sơ đồ, `.bus-model.fill` giãn hết chiều cao, hàng lưới `minmax(46px, 1fr)`. Đừng thêm khối cao phía trên sơ đồ.
+- **Sơ đồ xe phải vừa 1 màn hình** không cuộn (kể cả iPhone SE 375×667): shell là flex column `TopBar → .main (cuộn) → TabBar`;
+  ở chế độ sơ đồ, `.trip-page.map-mode` cao đúng bằng `.main` (`min-height: 500px`, thấp hơn thì cuộn), sơ đồ co giãn theo
+  (`flex: 1 1 0`, hàng lưới `minmax(0, 1fr)`). Nội dung trong giường phải co được (mã ở giữa, dấu/badge đè lên vị trí gối). Đừng thêm khối cao phía trên sơ đồ.
 - Nút bấm ≥ 44px, input font 16px (tránh iOS zoom), số điện thoại `type="tel"`, tiền dùng `MoneyInput` (`inputmode="numeric"`, tự chọn hết khi focus).
 - Popup dùng `Sheet` (bottom sheet, nút back Android đóng được) và `ask()` thay cho `confirm()/prompt()`. Trong một luồng nhiều bước, **đổi `mode` bên trong cùng một Sheet** thay vì đóng sheet này mở sheet khác (tránh lệch history của nút back).
 - Màu dùng token CSS ở `:root` (`--booked*`, `--boarded*`, `--paid-solid`, `--empty*`…), có bản dark tương ứng. Không hard-code màu mới.

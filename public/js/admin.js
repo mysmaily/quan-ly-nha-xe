@@ -250,7 +250,7 @@ function LayoutEditor({ layout, onChange, defaultPrice, defaultCombo }) {
       </div>
 
       <div class="editor-bar">
-        <button class="btn sm outline" onClick=${() => setGen({ floors: 2, lanes: 3, rows: 5, backRow: true, type: "single", naming: layout.naming || "column" })}>Tạo nhanh</button>
+        <button class="btn sm outline" onClick=${() => setGen({ floors: 2, lanes: 3, rows: 5, backRow: false, type: "single", naming: layout.naming || "column" })}>Tạo nhanh</button>
         <button class="btn sm outline" onClick=${() => onChange(renumber(layout))}>Đánh số lại</button>
       </div>
       <div class="field naming">
@@ -318,7 +318,7 @@ function LayoutEditor({ layout, onChange, defaultPrice, defaultCombo }) {
               <button type="button" onClick=${() => setGen({ ...gen, rows: Math.min(15, gen.rows + 1) })}>+</button>
             </div>
           <//>
-          <label class="switch-row"><input type="checkbox" checked=${gen.backRow} onChange=${(e) => setGen({ ...gen, backRow: e.target.checked })} /><span>Có hàng cuối nằm liền (băng cuối)</span></label>
+          <p class="hint">Hàng cuối không cần vẽ: app luôn có <b>băng cuối</b> để chứa khách thêm không có giường.</p>
           <p class="hint">Sẽ tạo ${(() => { const l = generateLayout(gen); return l.floors.reduce((a, f) => a + f.seats.length, 0); })()} giường. Sau đó chạm từng giường để chỉnh sửa.</p>
           <div class="row-btns">
             <button class="btn ghost" onClick=${() => setGen(null)}>Huỷ</button>

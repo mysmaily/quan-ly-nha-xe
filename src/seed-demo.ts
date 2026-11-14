@@ -1,16 +1,14 @@
 // Tạo dữ liệu mẫu để xem thử: bun src/seed-demo.ts
 import { db } from "./db.ts";
 
-// Giống xe thực tế: cột A/B/C, tầng 1 số lẻ, tầng 2 số chẵn, hàng cuối 5 giường
+// Giống xe thực tế: cột A/B/C, tầng 1 số lẻ, tầng 2 số chẵn
 function layout(rows = 5) {
   const floors = [0, 1].map((fi) => {
     const seats: any[] = [];
     for (let r = 0; r < rows; r++)
       ["A", "B", "C"].forEach((L, i) => seats.push({ code: L + (2 * r + 1 + fi), r, c: i * 2, type: "single", price: r < 3 && fi === 0 ? 400000 : null }));
-    const n = 2 * rows + 1 + fi;
-    [["A", n], ["A", n + 2], ["B", n], ["C", n + 2], ["C", n]].forEach(([L, k], c) =>
-      seats.push({ code: `${L}${k}`, r: rows, c, type: "single", price: 300000 }));
-    return { name: `Tầng ${fi + 1}`, rows: rows + 1, cols: 5, seats };
+    // Hàng cuối không chia giường: khách nằm băng cuối là booking không có giường (seat = NULL)
+    return { name: `Tầng ${fi + 1}`, rows, cols: 5, seats };
   });
   return JSON.stringify({ naming: "column", floors });
 }
@@ -33,7 +31,7 @@ for (let k = -20; k <= 0; k++) {
       .get(busId, day(k), dir, dir === "di" ? "Nghệ An → Hà Nội" : "Hà Nội → Nghệ An") as any;
     const n = 8 + Math.floor(Math.random() * 18);
     for (let i = 0; i < n; i++) {
-      const seat = CODES[(i * 7) % CODES.length];
+      const seat = i % 9 === 8 ? null : CODES[(i * 7) % CODES.length]; // vài khách nằm băng cuối
       const paid = k < 0 || Math.random() < 0.35 ? 1 : 0;
       const boarded = paid || (k === 0 && Math.random() < 0.4) ? 1 : 0;
       const amount = Math.random() < 0.15 ? 300000 : 350000;
