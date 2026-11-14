@@ -88,7 +88,14 @@ Dấu `$` và badge nằm ở đáy giường, thay chỗ cái gối. Băng cu�
 - Tài khoản admin đầu tiên tạo tự động khi DB trống từ env `ADMIN_PHONE` / `ADMIN_PIN` (mặc định `0900000000` / `123456`).
 - Xoá nhân viên = `active = 0` + xoá phiên. Đổi PIN của người khác → đăng xuất họ.
 
-### 2.8 Đồng bộ
+### 2.8 Giao diện chung theo quyền
+- **Chỉ có 1 giao diện** (`Shell` trong `app.js`) cho mọi tài khoản; tab hiện ra theo quyền:
+  `Sơ đồ` · `Danh sách` · **`Quản lý`** (chỉ `admin`: Thống kê / Xe / Nhân viên, hash `#/quan-ly[/xe|/nhan-vien]`) · `Tài khoản`.
+- Danh sách xe xem được lấy từ `GET /api/buses` (server quyết định theo quyền). Có từ 2 xe trở lên → bấm tên xe trên TopBar để chọn xe (`BusPicker`), xe đang chọn lưu ở `localStorage` (`bus`).
+- Admin mở app vào `Quản lý`, nhân viên vào `Sơ đồ`. Gõ hash không có quyền → về `Sơ đồ` (quyền thật vẫn kiểm ở server).
+- Thêm trang quản lý mới → thêm vào `MANAGE` trong `app.js`, đừng tạo shell riêng.
+
+### 2.9 Đồng bộ
 Lái xe và lơ xe cùng xe dùng chung dữ liệu: màn hình chuyến tự tải lại **mỗi 10 giây** và khi app quay lại foreground; thống kê mỗi 30 giây.
 Không có websocket. Chưa hỗ trợ offline cho thao tác ghi (mất mạng → báo lỗi để thử lại).
 
@@ -114,7 +121,7 @@ public/
   js/seatmap.js  BusModel/FloorGrid/Bed (vẽ xe), seatStatus, capacity, generateLayout, renumber
   js/trip.js     màn hình chuyến: useTrip (tải + poll), TripHeader, SummaryBar, SeatMap, PassengerList, BookingSheet, BookingForm, MovePicker
   js/admin.js    StatsPage, BusesPage + BusEditor + LayoutEditor, StaffPage + UserEditor
-  js/app.js      shell: đăng nhập, hash routing, TopBar/TabBar, StaffShell, AdminShell, MePage
+  js/app.js      shell: đăng nhập, hash routing, TopBar/TabBar, Shell (1 giao diện chung), BusPicker, ManagePage, MePage
 ```
 
 ### API (JSON, cookie `sid`, lỗi trả `{ error: "thông báo tiếng Việt" }`)

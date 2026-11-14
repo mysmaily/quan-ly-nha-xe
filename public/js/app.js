@@ -1,4 +1,4 @@
-import { html, render, useState, useEffect, api, toast, Toaster, ConfirmHost, Field, Segmented, Empty, icon, phoneFmt, JOBS, store } from "./lib.js";
+import { html, render, useState, useEffect, api, toast, Toaster, ConfirmHost, Sheet, Field, Segmented, Empty, icon, phoneFmt, JOBS, store } from "./lib.js";
 import { useTrip, TripPage } from "./trip.js";
 import { StatsPage, BusesPage, StaffPage } from "./admin.js";
 
@@ -96,70 +96,96 @@ function MePage({ me, bus, onLogout }) {
     </div>`;
 }
 
-// ---------- giao diện lơ xe ----------
-function StaffShell({ me, bus, onLogout }) {
-  const [tab, setTab] = useHashRoute("so-do");
-  const t = useTrip(bus?.id);
-  if (!bus) {
-    return html`<${TopBar} title="Nhà Xe" />
-      <div class="main"><div class="page"><${Empty}>Bạn chưa được phân công xe nào.<br />Hãy liên hệ chủ xe để được thêm vào xe.<//>
-        <button class="btn block ghost danger-text" onClick=${onLogout}>${icon("logout", 18)} Đăng xuất</button></div></div>`;
-  }
-  return html`
-    <${TopBar} title=${bus.plate + (bus.name ? " · " + bus.name : "")} sub=${me.name + " · " + JOBS[me.job]}
-      right=${html`<button class="icon-btn" aria-label="Tải lại" onClick=${() => { t.reload(); toast("Đã cập nhật"); }}>${icon("refresh")}</button>`} />
-    <main class="main">
-      ${tab === "toi" ? html`<${MePage} me=${me} bus=${bus} onLogout=${onLogout} />`
-        : html`<${TripPage} t=${t} view=${tab === "danh-sach" ? "list" : "map"} />`}
-    </main>
-    <${TabBar} value=${tab} onChange=${setTab} tabs=${[
-      { key: "so-do", label: "Sơ đồ", icon: "seat" },
-      { key: "danh-sach", label: "Danh sách", icon: "list" },
-      { key: "toi", label: "Tài khoản", icon: "user" },
-    ]} />`;
+// ---------- chọn xe (người được xem nhiều xe) ----------
+function BusPicker({ buses, value, onPick, onClose }) {
+  return html`<${Sheet} title="Chọn xe" onClose=${onClose}>
+    <div class="list cards">
+      ${buses.map((b) => html`<div class="row bus-row" onClick=${() => onPick(b.id)}>
+        <div class="row-icon">${icon("bus")}</div>
+        <div class="row-main">
+          <div class="row-title">${b.plate}${b.name && html` <span class="muted">· ${b.name}</span>`}</div>
+          <div class="row-sub">${b.route_out}</div>
+        </div>
+        <div class="row-end">${b.id === value && icon("check")}</div>
+      </div>`)}
+    </div>
+  <//>`;
 }
 
-// ---------- giao diện chủ xe ----------
-function AdminTrips() {
+// Trang Quản lý: chỉ hiện với tài khoản có quyền (admin); mục con nằm trong hash #/quan-ly/xe…
+const MANAGE = [
+  { key: "", label: "Thống kê" },
+  { key: "xe", label: "Xe" },
+  { key: "nhan-vien", label: "Nhân viên" },
+];
+function ManagePage({ me, sub, go }) {
+  const cur = MANAGE.some((m) => m.key === sub) ? sub : "";
+  return html`
+    <div class="view-switch"><${Segmented} value=${cur} onChange=${(k) => go(k ? "quan-ly/" + k : "quan-ly")}
+      options=${MANAGE.map((m) => ({ value: m.key, label: m.label }))} /></div>
+    ${cur === "xe" ? html`<${BusesPage} />` : cur === "nhan-vien" ? html`<${StaffPage} me=${me} />` : html`<${StatsPage} />`}`;
+}
+
+// Hash cũ của giao diện chủ xe trước đây → đường dẫn mới
+const LEGACY = { "thong-ke": "quan-ly", chuyen: "so-do", xe: "quan-ly/xe", "nhan-vien": "quan-ly/nhan-vien" };
+
+// ---------- 1 giao diện chung, tab theo quyền ----------
+function Shell({ me, myBus, onLogout }) {
+  const isAdmin = me.role === "admin";
+  const [route, go] = useHashRoute(isAdmin ? "quan-ly" : "so-do");
+  let [tab, sub = ""] = route.split("/");
+  if (LEGACY[route]) [tab, sub = ""] = LEGACY[route].split("/");
+  if (tab === "quan-ly" && !isAdmin) tab = "so-do";
+  if (!["so-do", "danh-sach", "quan-ly", "toi"].includes(tab)) tab = isAdmin ? "quan-ly" : "so-do";
+  const onTrip = tab === "so-do" || tab === "danh-sach";
+
+  // Xe được xem: admin mọi xe, nhân viên xe được phân công (server quyết định qua /api/buses)
   const [buses, setBuses] = useState(null);
-  const [busId, setBusId] = useState(() => store.get("adminBus", null));
-  const [view, setView] = useState("map");
+  const [busId, setBusId] = useState(() => store.get("bus", null));
+  const [picking, setPicking] = useState(false);
   useEffect(() => {
+    if (!onTrip) return;
     api("/buses").then((bs) => {
       setBuses(bs);
-      if (!bs.some((b) => b.id === busId)) setBusId(bs[0]?.id ?? null);
+      setBusId((id) => (bs.some((b) => b.id === id) ? id : bs[0]?.id ?? null));
     }).catch((e) => toast(e.message, "err"));
-  }, []);
-  const t = useTrip(busId);
-  if (!buses) return html`<div class="page"><div class="loading">Đang tải…</div></div>`;
-  if (!buses.length) return html`<div class="page"><${Empty}>Chưa có xe nào. Vào mục <b>Xe</b> để thêm xe.<//></div>`;
-  return html`
-    <div class="bus-chips">
-      ${buses.map((b) => html`<button class=${"chip " + (b.id === busId ? "on" : "")} onClick=${() => { setBusId(b.id); store.set("adminBus", b.id); }}>${b.plate}${b.name ? " · " + b.name : ""}</button>`)}
-    </div>
-    <div class="view-switch"><${Segmented} value=${view} onChange=${setView} options=${[{ value: "map", label: "Sơ đồ" }, { value: "list", label: "Danh sách" }]} /></div>
-    ${busId && html`<${TripPage} t=${t} view=${view} />`}`;
-}
+  }, [onTrip]);
+  const bus = buses?.find((b) => b.id === busId) || null;
+  const t = useTrip(bus?.id);
+  const pick = (id) => { setBusId(id); store.set("bus", id); setPicking(false); };
 
-function AdminShell({ me, bus, onLogout }) {
-  const [tab, setTab] = useHashRoute("thong-ke");
-  const titles = { "thong-ke": "Tổng quan", chuyen: "Chuyến xe", xe: "Quản lý xe", "nhan-vien": "Nhân viên", toi: "Tài khoản" };
+  const tabs = [
+    { key: "so-do", label: "Sơ đồ", icon: "seat" },
+    { key: "danh-sach", label: "Danh sách", icon: "list" },
+    isAdmin && { key: "quan-ly", label: "Quản lý", icon: "chart" },
+    { key: "toi", label: "Tài khoản", icon: "user" },
+  ].filter(Boolean);
+
+  let top, body;
+  if (onTrip) {
+    const many = buses && buses.length > 1;
+    const title = bus ? bus.plate + (bus.name ? " · " + bus.name : "") : "Nhà Xe";
+    top = html`<${TopBar}
+      title=${many ? html`<button class="tb-pick" onClick=${() => setPicking(true)}>${title}${icon("down", 18)}</button>` : title}
+      sub=${me.name + " · " + (isAdmin ? "Chủ xe" : JOBS[me.job])}
+      right=${bus && html`<button class="icon-btn" aria-label="Tải lại" onClick=${() => { t.reload(); toast("Đã cập nhật"); }}>${icon("refresh")}</button>`} />`;
+    body = !buses ? html`<div class="page"><div class="loading">Đang tải…</div></div>`
+      : !bus ? html`<div class="page"><${Empty}>${isAdmin
+          ? html`Chưa có xe nào. Vào <b>Quản lý → Xe</b> để thêm xe.`
+          : html`Bạn chưa được phân công xe nào.<br />Hãy liên hệ chủ xe để được thêm vào xe.`}<//></div>`
+      : html`<${TripPage} t=${t} view=${tab === "danh-sach" ? "list" : "map"} />`;
+  } else if (tab === "quan-ly") {
+    top = html`<${TopBar} title="Quản lý" sub=${me.name} />`;
+    body = html`<${ManagePage} me=${me} sub=${sub} go=${go} />`;
+  } else {
+    top = html`<${TopBar} title="Tài khoản" sub=${me.name} />`;
+    body = html`<${MePage} me=${me} bus=${myBus} onLogout=${onLogout} />`;
+  }
   return html`
-    <${TopBar} title=${titles[tab] || "Nhà Xe"} sub=${me.name} />
-    <main class="main">
-    ${tab === "chuyen" ? html`<${AdminTrips} />`
-      : tab === "xe" ? html`<${BusesPage} />`
-      : tab === "nhan-vien" ? html`<${StaffPage} me=${me} />`
-      : tab === "toi" ? html`<${MePage} me=${me} bus=${bus} onLogout=${onLogout} />`
-      : html`<${StatsPage} />`}
-    </main>
-    <${TabBar} value=${tab} onChange=${setTab} tabs=${[
-      { key: "thong-ke", label: "Tổng quan", icon: "chart" },
-      { key: "chuyen", label: "Chuyến", icon: "seat" },
-      { key: "xe", label: "Xe", icon: "bus" },
-      { key: "nhan-vien", label: "Nhân viên", icon: "users" },
-      { key: "toi", label: "Tôi", icon: "user" },
-    ]} />`;
+    ${top}
+    <main class="main">${body}</main>
+    <${TabBar} value=${tab} onChange=${go} tabs=${tabs} />
+    ${picking && buses && html`<${BusPicker} buses=${buses} value=${busId} onPick=${pick} onClose=${() => setPicking(false)} />`}`;
 }
 
 // ---------- gốc ----------
@@ -177,8 +203,7 @@ function App() {
   let body;
   if (me === undefined) body = html`<div class="loading full">Đang tải…</div>`;
   else if (!me) body = html`<${Login} onDone=${load} />`;
-  else if (me.user.role === "admin") body = html`<${AdminShell} me=${me.user} bus=${me.bus} onLogout=${logout} />`;
-  else body = html`<${StaffShell} me=${me.user} bus=${me.bus} onLogout=${logout} />`;
+  else body = html`<${Shell} me=${me.user} myBus=${me.bus} onLogout=${logout} />`;
   return html`${body}<${Toaster} /><${ConfirmHost} />`;
 }
 
